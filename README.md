@@ -27,7 +27,7 @@ One top-level folder per authoring application:
 
 | Folder | Source | Files |
 |---|---|---:|
-| [`excel/`](#excel-excel-oracle-workbooks) | Microsoft Excel for Microsoft 365 (16.0, build 20430, en-US), driven by [`tools/excel-oracles/`](tools/excel-oracles) | 47 |
+| [`excel/`](#excel-excel-oracle-workbooks) | Microsoft Excel for Microsoft 365 (16.0, build 20430, en-US), driven by [`tools/excel-oracles/`](tools/excel-oracles) | 88 |
 
 Also in the repository:
 
@@ -98,7 +98,7 @@ repository's history once it is published; consumers pin commits.
 
 ## `excel/`: Excel oracle workbooks
 
-47 files (44 `.xlsx`, 3 `.xls`), 0.67 MB in total. The cases are synthetic shapes of failure
+88 files (82 `.xlsx`, 6 `.xls`), 1.13 MB in total. The cases are synthetic shapes of failure
 classes found by running GridCraft over real-world workbooks; only the shapes were kept.
 Each file with a handful of formulas also has a text listing (`C1: =A1-B1`) two columns right of
 its used range, so it explains itself when opened.
@@ -108,31 +108,81 @@ its used range, so it explains itself when opened.
 | `near-zero/` | 7 | `=A1-B1` where A1 and B1 are the same three parts summed in a different order (`0.1+0.2+0.3`, `1000000.1+0.7+0.2`, and `300000000.1+0.1+0.1`, whose 5.96e-8 residue is above `check`'s tolerance); SUM variants; the same difference in parentheses, inside `IF(...>0)` and as a divisor; one copy with iteration on | The final `-` of a formula snaps to 0, so `=A1-B1` is 0 and `=1/C1` is `#DIV/0!`. Inside parentheses, a comparison or `SUM(A1-B1)` the residue (1.16e-10) survives, so `IF(A1-B1>0,…)` is TRUE |
 | `power-negative/` | 4 | `^` and `POWER` with a negative base: odd roots (`(-8)^(1/3)`, `(-32)^(1/5)`, `(-8)^0.2`, negative exponents, cell operands), even roots and 14-digit exponents that stay `#NUM!`, and the exponent limit (1/2147483645 works, 1/2147483647 and 1/1E15 don't) | `(-8)^(1/3)` = -1.9999999999999998 |
 | `criteria-ref-error/` | 10 | `#REF!` in a range argument of SUMIF, SUMIFS, COUNTIF, COUNTIFS, AVERAGEIF, AVERAGEIFS, MAXIFS, MINIFS; a `#REF!` criterion as a control; the realistic origin, a deleted sheet | `#REF!` for every range position; a `#REF!` criterion gives 0 |
-| `date-text/` | 5 | Date text with month names and without separators: `"1Jan"`, `"Jan1"`, `"1 Jan"`, `"Jan 2021"`, `"1Jan21"`, `"15Mar2024"`, `MONTH(1&"Feb")`, `DAY("15Mar")`; numbers read as two-digit years (`"Jan 32"`, `"Feb 29"`); inputs that stay `#VALUE!` | See the year note below |
-| `precision-displayed/` | 3 | Precision as displayed on: `=-130+657.91` formatted `0`, `=A1*10`, `=A1/7` formatted `0.0000`, `=A3*7`, `=-1+2.91`, in `.xlsx` and `.xls`; the same cells with the option off as a control | 528, 5280, 75.4286, 528.0002 |
-| `legacy-xls/` | 4 | Legacy (pre-dynamic-array) formulas with a range in one cell, `=Sheet1!A1:G1` and `=Sheet1!A1:A7`, saved as Excel 97-2003 `.xls` and, as a twin, `.xlsx` | Implicit intersection: the cell in the formula's column (row); `#VALUE!` outside the range |
-| `circular/` | 7 | `A1 =SUMIFS(B1:C1,B2:C2,"x")` with `C1 =A1*2`: C1 not selected by the criteria (not circular), selected (truly circular, iteration off and on), in a later criteria range, whole columns; the SUMIF form; INDEX as a control | Not circular unless the criteria select C1; the truly circular file caches A1 = 5, C1 = 0 |
+| `date-text/` | 11 | Date text with month names and without separators: `"1Jan"`, `"Jan1"`, `"1 Jan"`, `"Jan 2021"`, `"1Jan21"`, `"15Mar2024"`, `MONTH(1&"Feb")`, `DAY("15Mar")`; numbers read as two-digit years (`"Jan 32"`, `"Feb 29"`), also with `-` and `/`; `-`/`/` day forms (`"Jan-21"`, `"Jan/1"`); the two-digit-year window (`"1Jan29"`, `"1Jan30"`); month prefixes longer than three letters (`"Sept"`, `"Janu"`, `"Decemb"`); punctuated forms that stay `#VALUE!` (`"4.Mar.2026"`, `"1Jan, 2021"`, `"Jan 15 2021"`, `"001Jan"`, `"Ma"`) and those that parse (`"Mar 4, 2026"`) | `"Jan-21"` is 21 January of the current year, not 2021; `"1Jan29"` is 2029 and `"1Jan30"` 1930. See the year note below |
+| `precision-displayed/` | 16 | Precision as displayed on: `=-130+657.91` formatted `0`, `=A1*10`, `=A1/7` formatted `0.0000`, `=A3*7`, `=-1+2.91`, in `.xlsx` and `.xls`; the same cells with the option off as a control. One file per format family (percent, currency, `0.0,,` scaling, fractions, scientific, `0.00;(0.0)` sections, literal text, `[<1]0.00;0`), with General, date/time and `@` as controls; a cross-cell read; a spill landing in cells formatted `0`, `0.0`, `0.00` | 528, 5280, 75.4286, 528.0002. Every number format rounds to what it shows (`0.0,,` stores 1234567.891 as 1200000, `?/8` stores 0.3 as 0.25); dates, times, General and `@` keep the full value. Each spilled element is rounded by its own cell's format |
+| `legacy-xls/` | 10 | Legacy (pre-dynamic-array) formulas with a range in one cell, `=Sheet1!A1:G1` and `=Sheet1!A1:A7`; a range inside an operator inside SUM, `=MAX(SUM(A1:A3/12),0)`; a one-cell Ctrl+Shift+Enter array; a formula filled down (a shared formula). Each saved as Excel 97-2003 `.xls` and, as a twin, `.xlsx` | Implicit intersection: the cell in the formula's column (row); `#VALUE!` outside the range. `=MAX(SUM(A1:A3/12),0)` is 2 in row 2 and 6 as an array formula |
+| `circular/` | 16 | `A1 =SUMIFS(B1:C1,B2:C2,"x")` with `C1 =A1*2`: C1 not selected by the criteria (not circular), selected (truly circular, iteration off and on), in the first or a later criteria range, whole columns, size-mismatched ranges, an array criterion that does or doesn't select C1; the SUMIF, AVERAGEIFS, MAXIFS, MINIFS and COUNTIFS forms; INDEX as a control | Not circular unless the criteria select C1, or C1 is in the first criteria range (SUMIFS and COUNTIFS); size-mismatched ranges are `#VALUE!`, not circular. The truly circular files cache C1 = 0 |
 | `dependency-chain/` | 3 | `=A{r+1}+1` down 5,000 rows (each cell reads the row below), a 4,000-link chain hopping between two sheets, and the downward chain as a control. Excel stores each column as a shared formula | 5000 and 4000 at the top |
 | `rate/` | 2 | `RATE(n,0,pv,0)` and `RATE(n,0,pv,tiny fv)` | `RATE(5,0,-100,0)` = -0.9999994091451825; `RATE(1,0,-100,0)` and `RATE(5,0,0,0)` are `#NUM!` |
-| `round-trip/` | 2 | A PivotTable from an in-sheet range (row field, sum of values) with `GETPIVOTDATA`, and a clustered column chart over a range | For round-trip loss; their formulas are a light calc check |
+| `round-trip/` | 3 | A PivotTable from an in-sheet range (row field, sum of values) with `GETPIVOTDATA`, a clustered column chart over a range, and a two-cell workbook whose author fields are blank but whose `docProps/core.xml` carries the created and modified dates | For round-trip loss; their formulas are a light calc check |
+| `pivot-external/` | 4 | PivotTables whose source is in a second workbook, `source-data.xlsx` (committed next to them): a range, a defined name in that workbook, and two PivotTables sharing one cache. The link is saved relative (`Target="source-data.xlsx"`), so it resolves inside the repository | `GETPIVOTDATA` over them gives 58, 392, 156 (and 107 for the second PivotTable) |
+| `getpivotdata/` | 2 | `GETPIVOTDATA` against an in-sheet PivotTable with two row fields: grand total, one and two field/item pairs, the data field by caption, mixed case, a cell inside the PivotTable as the reference, an item from a cell; a missing item, an inner field alone and an unknown data field; SUMIFS over the same rows as a control | 392, 107, 72; `#REF!` for the missing item, the inner field alone and the unknown field |
 
 **Locale.** Excel ran as en-US (country code 1, decimal `.`, month-day-year). Date-text parsing
 depends on it, and on Windows' two-digit-year window (1930-2029): `"Feb 29"` is February 2029 and
 `"Feb 30"` February 1930, not a day in the current year.
 
 **Year.** Date text without a year takes the year the calculation runs in. Only
-`date-text/month-name-no-year-y2026.xlsx` depends on it: its cached serials are right during
-2026. From 2027 on, a correct engine will mismatch every cell in that file; regenerate it with
-the new year in its name. `MONTH`/`DAY` extractions don't depend on the year.
+`date-text/month-name-no-year-y2026.xlsx` and `date-text/month-name-day-this-year-y2026.xlsx`
+depend on it: their cached serials are right during 2026. From 2027 on, a correct engine will
+mismatch every cell in those files; regenerate them with the new year in their names. `MONTH`/`DAY` extractions don't depend on the year.
 
 **RATE.** Excel's RATE is an iterative solver, so its answer for a degenerate case (pmt 0, fv 0)
 is wherever its iteration stopped, about -0.9999994. A correct-in-spirit implementation may not
 match to 1e-9.
 
+**Pivot sources.** The `pivot-external/` files read their source from `source-data.xlsx` in the
+same folder. Keep the four together; regenerating a pivot file needs `source-data.xlsx` to exist
+first (the generator copies it into its staging folder and opens it from there, which is what
+makes Excel write the link relative).
+
 **Iteration.** `circular/sumifs-selected-cell-iterate-on.xlsx` and
 `near-zero/downstream-if-positive-iterate-on.xlsx` are saved with iterative calculation on (100
 iterations, max change 0.001). The circular one converges towards 10 and stops where Excel's
 iteration stopped, so a near match is the expected result there.
+
+### Files added in the second batch
+
+| File | Reproduces |
+|---|---|
+| `pivot-external/source-data.xlsx` | The source workbook: 8 rows of Region, Category, Amount and a workbook-level name `SourceRows` over them. No formulas |
+| `pivot-external/range-source.xlsx` | PivotTable whose cache reads `[source-data.xlsx]Sheet1!A1:C9`; `GETPIVOTDATA` against it |
+| `pivot-external/defined-name-source.xlsx` | The same PivotTable with the cache reading the defined name `source-data.xlsx!SourceRows` |
+| `pivot-external/shared-cache.xlsx` | Two PivotTables (by Category, by Region) on one external cache |
+| `getpivotdata/field-item-forms.xlsx` | Ten `GETPIVOTDATA` forms, six with values and four that are `#REF!` |
+| `getpivotdata/sumifs-control.xlsx` | Control: the same PivotTable, totals from `SUM`/`SUMIFS` only |
+| `date-text/month-name-day-this-year-y2026.xlsx` | `"Jan-21"`, `"Jan/21"`, `"Jan-1"`, `"Jan/1"`, `"Jan-30"`, `"1Janu"`, `"Janu 1"`, `"1Febr"`, `"01Jan"`, `"Sep 1"`: days in the current year |
+| `date-text/month-name-number-as-year-separators.xlsx` | `"Jan-32"`, `"Jan/32"`, `"Jan-0"`, `"Feb-30"` and `"Jan 32"+0`-style coercion: the number is a year |
+| `date-text/two-digit-year-window.xlsx` | `"1Jan29"` is 2029, `"1Jan30"` 1930, with and without separators |
+| `date-text/month-name-long-prefix.xlsx` | `"Sept"`, `"Janu"`, `"Septe"`, `"Septem"`, `"Decemb"` with a year parse; `"Janux 2021"` and `"Sept"` alone are `#VALUE!` |
+| `date-text/month-name-punctuation-value-errors.xlsx` | `"4.Mar.2026"`, `"Jan.21"`, `"1Jan, 2021"`, `"4 Mar, 2026"`, `"2021Jan"`, `"Jan 15 2021"`, `"001Jan"`, `"Ma"`, `"Sept 1 2021"`, `"Mar.4"`: all `#VALUE!` |
+| `date-text/month-name-punctuation-control.xlsx` | Control: `"Mar 4, 2026"`, `"Jan 15, 2021"`, `"4-Mar-2026"`, `"4/Mar/2026"`, `"Jan-2021"`, `"Jan/2021"` parse |
+| `precision-displayed/pad-on-percent.xlsx` | `0%`, `0.0%`, `0.00%`: `=1/3` is stored as 0.33 |
+| `precision-displayed/pad-on-currency.xlsx` | `$#,##0.00`, a negative section in parentheses, `"$"#,##0.0` |
+| `precision-displayed/pad-on-thousands-scaling.xlsx` | `0.0,,`, `#,##0,`, `0.00,`: rounded at the scaled digit (1200000, 12000, 9880) |
+| `precision-displayed/pad-on-fractions.xlsx` | `# ?/?` and `?/8`: stored as the fraction shown (0.3 is 2/7 and 2/8) |
+| `precision-displayed/pad-on-scientific.xlsx` | `##0.0E+0`, `0.00E+00`, `0.0E+0` |
+| `precision-displayed/pad-on-multi-section.xlsx` | `0.00;(0.0)` and `0;-0.000`: the negative section's decimals apply to negatives |
+| `precision-displayed/pad-on-literal-text.xlsx` | `0.0" u"`, `"x"0.00`, and `0.0"%"` (a quoted `%` doesn't scale) |
+| `precision-displayed/pad-on-conditional-sections.xlsx` | `[<1]0.00;0`: rounded to two decimals whatever the section shows (`=2+1/3` shows 2, stores 2.33; `=-10/3` stores -3) |
+| `precision-displayed/pad-on-general-control.xlsx` | Control: General keeps the full value |
+| `precision-displayed/pad-on-date-time-control.xlsx` | Control: `m/d/yyyy`, `h:mm`, `m/d/yyyy h:mm`, `[h]:mm` keep the full value |
+| `precision-displayed/pad-on-text-format-control.xlsx` | Control: a formula in a cell formatted `@` (set after entry) keeps the full value |
+| `precision-displayed/pad-on-cross-cell-read.xlsx` | `=A1` formatted `0.0` reading a General `=10/3` stores 3.3; a General cell reading a formatted one reads the rounded value |
+| `precision-displayed/pad-on-spill-mixed-formats.xlsx` | `=SEQUENCE(3,1,1/3,1/3)` spilling into cells formatted `0`, `0.0`, `0.00`: stored as 0, 0.7, 1; `SUM` over them is 1.7 |
+| `circular/sumifs-first-criteria-range.xlsx` | C1 in the first criteria range: truly circular (C1 cached 0); the twin of `sumifs-later-criteria-range.xlsx` |
+| `circular/sumifs-size-mismatch-value-error.xlsx` | Criteria range one cell wider than the sum range: `#VALUE!`, not circular |
+| `circular/sumifs-array-criterion-unselected.xlsx` | `=SUM(SUMIFS(B1:C1,B2:C2,{"x","z"}))`: C1 not selected, not circular |
+| `circular/sumifs-array-criterion-selected.xlsx` | `{"x","y"}` selects C1: truly circular |
+| `circular/averageifs-unselected-cell.xlsx` | AVERAGEIFS, C1 not selected: not circular |
+| `circular/maxifs-unselected-cell.xlsx` | MAXIFS, C1 not selected: not circular |
+| `circular/minifs-unselected-cell.xlsx` | MINIFS, C1 not selected: not circular |
+| `circular/countifs-later-criteria-range.xlsx` | COUNTIFS with C1 in the second criteria range: not circular |
+| `circular/countifs-first-criteria-range.xlsx` | COUNTIFS with C1 in the first criteria range: truly circular |
+| `legacy-xls/cse-single-cell-array.xls`, `.xlsx` | One-cell Ctrl+Shift+Enter arrays `{=SUM(A1:A3*B1:B3)}`, `{=MAX(A1:A3-B1:B3)}` stay arrays (32, -3); SUMPRODUCT as a control |
+| `legacy-xls/shared-formula-fill-down.xls`, `.xlsx` | Two formulas filled down six rows, stored as shared formulas (SHRFMLA in `.xls`) |
+| `legacy-xls/implicit-intersection-inside-sum.xls`, `.xlsx` | `=MAX(SUM(A1:A3/12),0)` as a legacy formula: 2 in row 2, `#VALUE!` in row 5; 6 as an array formula |
+| `round-trip/core-properties-blank-author.xlsx` | Author and Last Author blank, created and modified dates present: a save must keep `docProps/core.xml` |
 
 ## Metadata and privacy
 

@@ -6,13 +6,17 @@
 #               F 'A1' '=A2+1' ['0.00']   formula (Range.Formula: legacy, implicit intersection)
 #               V 'A1' 1.5 ['0.00']       number constant
 #               T 'A1' 'x'                text constant (cell formatted as text first)
+#               @{ a = 'A1'; f2 = '=SEQUENCE(3)' }        dynamic-array formula (Range.Formula2)
+#               @{ a = 'A1'; fa = '=SUM(A1:A3*B1:B3)' }   Ctrl+Shift+Enter array (Range.FormulaArray)
+#               @{ a = 'A1'; n = '0.0' }                 number format only
 #             An address may carry a sheet ('Sheet2!A1') and may be a range
 #             ('A1:A4999'): a formula with relative references then fills the range.
 #   sheets    sheet names, default @('Sheet1')
 #   formats   @('xlsx'), @('xls') or both; default @('xlsx')
 #   iterate   iterative calculation on (default $false); maxIter / maxChange go with it
 #   pad       precision as displayed (default $false)
-#   build     optional scriptblock { param($wb, $xl) ... } run after the cells, before saving
+#   build     optional scriptblock { param($wb, $xl, $ctx) ... } run after the cells, before
+#             saving; $ctx.stage is the staging folder and $ctx.outRoot the excel/ folder
 #   list      write a formula listing ("C1: =A1-B1" text cells) to the right of the used
 #             range on each sheet, so a file explains itself when opened (default $true)
 #
@@ -202,5 +206,207 @@ $cases += @{ name = 'round-trip/chart-column-clustered'; list = $false
         $co.Chart.ChartType = 51                                       # xlColumnClustered
         $co.Chart.SetSourceData($ws.Range('A1:B5'))
     } }
+
+# ================================================================ batch 2
+
+# ---------------------------------------------------------------- 11. pivot sources outside the workbook
+# pivot-external/source-data.xlsx is the source: a plain range plus a workbook-level name over
+# it. The pivot cases copy it into the staging folder and open it from there, so the saved
+# workbooks link to it by a bare relative name and resolve next to it in excel/pivot-external/.
+$pivotRows = @((T 'A1' 'Region'), (T 'B1' 'Category'), (T 'C1' 'Amount'),
+    (T 'A2' 'north'), (T 'B2' 'a'), (V 'C2' 11), (T 'A3' 'south'), (T 'B3' 'b'), (V 'C3' 23),
+    (T 'A4' 'north'), (T 'B4' 'b'), (V 'C4' 35), (T 'A5' 'east'), (T 'B5' 'a'), (V 'C5' 47),
+    (T 'A6' 'south'), (T 'B6' 'a'), (V 'C6' 59), (T 'A7' 'north'), (T 'B7' 'a'), (V 'C7' 61),
+    (T 'A8' 'east'), (T 'B8' 'c'), (V 'C8' 72), (T 'A9' 'south'), (T 'B9' 'c'), (V 'C9' 84))
+function Open-PivotSource($xl, $ctx) {
+    $src = Join-Path $ctx.outRoot 'pivot-external\source-data.xlsx'
+    if (-not (Test-Path -LiteralPath $src)) { throw 'pivot-external/source-data.xlsx is missing; generate it first' }
+    $copy = Join-Path $ctx.stage 'source-data.xlsx'
+    Copy-Item -LiteralPath $src -Destination $copy -Force
+    return $xl.Workbooks.Open($copy)
+}
+function Add-Pivot($wb, $pc, [string]$at, [string]$name, [string[]]$rowFields) {
+    $ws = $wb.Worksheets.Item('Sheet1')
+    $pt = $pc.CreatePivotTable($ws.Range($at), $name)
+    $pos = 0
+    foreach ($f in $rowFields) { $pos++; $pf = $pt.PivotFields($f); $pf.Orientation = 1; $pf.Position = $pos }   # xlRowField
+    [void]$pt.AddDataField($pt.PivotFields('Amount'), 'Sum of Amount', -4157)                                # xlSum
+}
+$cases += @{ name = 'pivot-external/source-data'; cells = $pivotRows
+    build = { param($wb, $xl) [void]$wb.Names.Add('SourceRows', '=Sheet1!$A$1:$C$9') } }
+$extFormulas = @((F 'H1' '=GETPIVOTDATA("Amount",$D$3,"Category","b")'), (F 'H2' '=GETPIVOTDATA("Amount",$D$3)'),
+    (F 'H3' '=GETPIVOTDATA("Sum of Amount",$D$3,"Category","c")'))
+$cases += @{ name = 'pivot-external/range-source'; cells = $extFormulas
+    build = {
+        param($wb, $xl, $ctx)
+        $src = Open-PivotSource $xl $ctx
+        $wb.Activate()
+        $pc = $wb.PivotCaches().Create(1, '[source-data.xlsx]Sheet1!R1C1:R9C3')                     # xlDatabase
+        Add-Pivot $wb $pc 'D3' 'PivotTable1' @('Category')
+    } }
+$cases += @{ name = 'pivot-external/defined-name-source'; cells = $extFormulas
+    build = {
+        param($wb, $xl, $ctx)
+        $src = Open-PivotSource $xl $ctx
+        $wb.Activate()
+        $pc = $wb.PivotCaches().Create(1, 'source-data.xlsx!SourceRows')
+        Add-Pivot $wb $pc 'D3' 'PivotTable1' @('Category')
+    } }
+$cases += @{ name = 'pivot-external/shared-cache'
+    cells = $extFormulas + @((F 'H4' '=GETPIVOTDATA("Amount",$D$12,"Region","north")'), (F 'H5' '=H1+H4'))
+    build = {
+        param($wb, $xl, $ctx)
+        $src = Open-PivotSource $xl $ctx
+        $wb.Activate()
+        $pc = $wb.PivotCaches().Create(1, '[source-data.xlsx]Sheet1!R1C1:R9C3')
+        Add-Pivot $wb $pc 'D3' 'PivotTable1' @('Category')
+        Add-Pivot $wb $pc 'D12' 'PivotTable2' @('Region')
+    } }
+
+# ---------------------------------------------------------------- 12. GETPIVOTDATA on an in-sheet pivot
+# Pivot at E3 over A1:C9, rows Region then Category (compact layout, subtotals on).
+$gpdBuild = {
+    param($wb, $xl)
+    $pc = $wb.PivotCaches().Create(1, 'Sheet1!R1C1:R9C3')
+    Add-Pivot $wb $pc 'E3' 'PivotTable1' @('Region', 'Category')
+}
+$cases += @{ name = 'getpivotdata/field-item-forms'; build = $gpdBuild
+    cells = $pivotRows + @((T 'A11' 'north'),
+        (F 'I1' '=GETPIVOTDATA("Amount",$E$3)'),
+        (F 'I2' '=GETPIVOTDATA("Amount",$E$3,"Region","north")'),
+        (F 'I3' '=GETPIVOTDATA("Amount",$E$3,"Region","north","Category","a")'),
+        (F 'I4' '=GETPIVOTDATA("Sum of Amount",$E$3,"Region","south")'),
+        (F 'I5' '=GETPIVOTDATA("amount",$E$3,"region","EAST","category","C")'),
+        (F 'I6' '=GETPIVOTDATA("Amount",$F$6,"Region",A11)'),
+        (F 'I7' '=GETPIVOTDATA("Amount",$E$3,"Category","b")'),
+        (F 'I8' '=GETPIVOTDATA("Amount",$E$3,"Region","west")'),
+        (F 'I9' '=GETPIVOTDATA("Amount",$E$3,"Region","east","Category","b")'),
+        (F 'I10' '=GETPIVOTDATA("Total",$E$3)')) }
+# Control: the same pivot, and the same totals from SUMIFS over the source rows.
+$cases += @{ name = 'getpivotdata/sumifs-control'; build = $gpdBuild
+    cells = $pivotRows + @((F 'I1' '=SUM(C2:C9)'), (F 'I2' '=SUMIFS(C2:C9,A2:A9,"north")'),
+        (F 'I3' '=SUMIFS(C2:C9,A2:A9,"north",B2:B9,"a")'), (F 'I4' '=SUMIFS(C2:C9,A2:A9,"south")')) }
+
+# ---------------------------------------------------------------- 13. more date text
+# Probed in Excel en-US first; each file holds what Excel actually does with the form.
+# Day in the current year: a number 1-31 after a month name with "-" or "/" is a day, and long
+# month prefixes ("Janu", "Febr") are accepted. Cached serials are right only during 2026.
+$cases += @{ name = 'date-text/month-name-day-this-year-y2026'; cells = @(Column @(
+            '=DATEVALUE("Jan-21")', '=DATEVALUE("Jan/21")', '=DATEVALUE("Jan-1")', '=DATEVALUE("Jan/1")',
+            '=DATEVALUE("Jan-30")', '="Jan-21"+0', '=DATEVALUE("1Janu")', '=DATEVALUE("Janu 1")',
+            '=DATEVALUE("1Febr")', '=DATEVALUE("01Jan")', '=DATEVALUE("Sep 1")')) }
+# The same number-as-year reading with separators and with "+0" coercion (the space forms are
+# in month-name-number-as-year.xlsx).
+$cases += @{ name = 'date-text/month-name-number-as-year-separators'; cells = @(Column @(
+            '=DATEVALUE("Jan-32")', '=DATEVALUE("Jan/32")', '=DATEVALUE("Jan-0")', '=DATEVALUE("Feb-30")',
+            '="Jan 32"+0', '="Feb 30"+0', '="Jan 0"+0', '=YEAR("Jan 32")')) }
+# Two-digit years: 29 is 2029, 30 is 1930 (Windows' 1930-2029 window).
+$cases += @{ name = 'date-text/two-digit-year-window'; cells = @(Column @(
+            '=DATEVALUE("1Jan29")', '=DATEVALUE("1Jan30")', '=DATEVALUE("1-Jan-29")', '=DATEVALUE("1-Jan-30")',
+            '=DATEVALUE("1 Jan 29")', '=DATEVALUE("1 Jan 30")', '=YEAR("1Jan29")', '=YEAR("1Jan30")')) }
+# Month prefixes longer than three letters, with an explicit year.
+$cases += @{ name = 'date-text/month-name-long-prefix'; cells = @(Column @(
+            '=DATEVALUE("1 Sept 2021")', '=DATEVALUE("1Sept2021")', '=DATEVALUE("Sept 2021")', '=DATEVALUE("1Janu2021")',
+            '=DATEVALUE("Janu 2021")', '=DATEVALUE("Septe 2021")', '=DATEVALUE("1 Septem 2021")', '=DATEVALUE("Decemb 2021")',
+            '=DATEVALUE("Janux 2021")', '=DATEVALUE("Sept")')) }
+# Forms that stay #VALUE!: dots, a comma after the day, year first, a year after "Mon D"
+# without a comma, a three-digit day, a two-letter month.
+$cases += @{ name = 'date-text/month-name-punctuation-value-errors'; cells = @(Column @(
+            '=DATEVALUE("4.Mar.2026")', '=DATEVALUE("Jan.21")', '=DATEVALUE("1Jan, 2021")', '=DATEVALUE("4 Mar, 2026")',
+            '=DATEVALUE("2021Jan")', '=DATEVALUE("Jan 15 2021")', '=DATEVALUE("001Jan")', '=DATEVALUE("Ma")',
+            '=DATEVALUE("Sept 1 2021")', '=DATEVALUE("Mar.4")', '="Jan 15 2021"+0')) }
+# Control: the punctuated forms Excel does accept, all with an explicit four-digit year.
+$cases += @{ name = 'date-text/month-name-punctuation-control'; cells = @(Column @(
+            '=DATEVALUE("Mar 4, 2026")', '=DATEVALUE("Jan 15, 2021")', '=DATEVALUE("4-Mar-2026")', '=DATEVALUE("4/Mar/2026")',
+            '=DATEVALUE("Jan-2021")', '=DATEVALUE("Jan/2021")')) }
+
+# ---------------------------------------------------------------- 14. precision as displayed, by format family
+# Each source is a formula in a formatted cell; the General cell next to it reads the stored
+# (rounded) value. Excel 365 rounds to what the format shows for every number format probed
+# except dates, times, General and text.
+function PadPair([string]$row, [string]$f, [string]$fmt) { (F "A$row" $f $fmt), (F "B$row" "=A$row*3") }
+$padFamilies = [ordered]@{
+    'percent'           = @(@('=1/3', '0%'), @('=0.4+0.003', '0.0%'), @('=-2/3', '0.00%'))
+    'currency'          = @(@('=10/3', '$#,##0.00'), @('=-10/3', '$#,##0.00;($#,##0.00)'), @('=1234.5678', '"$"#,##0.0'))
+    'thousands-scaling' = @(@('=1234567.891', '0.0,,'), @('=12345.678', '#,##0,'), @('=9876.54', '0.00,'))
+    'fractions'         = @(@('=2+1/3', '# ?/?'), @('=0.3+0', '# ?/?'), @('=0.3+0', '?/8'), @('=-10/3', '?/8'), @('=45000.123456', '# ?/?'))
+    'scientific'        = @(@('=12345.678', '##0.0E+0'), @('=1/7', '0.00E+00'), @('=-98765.4', '0.0E+0'))
+    'multi-section'     = @(@('=10/3', '0.00;(0.0)'), @('=-10/3', '0.00;(0.0)'), @('=-10/7', '0;-0.000'))
+    'literal-text'      = @(@('=10/3', '0.0" u"'), @('=20/3', '"x"0.00'), @('=10/3', '0.0"%"'))
+    # Not a control, despite the condition: Excel rounds by the first section's decimals
+    # (2+1/3 shows "2" but is stored as 2.33; -10/3 is stored as -3).
+    'conditional-sections' = @(@('=1/3', '[<1]0.00;0'), @('=2+1/3', '[<1]0.00;0'), @('=-10/3', '[<1]0.00;0'), @('=12345.678', '[<1]0.00;0'))
+    # Controls: kept at full value.
+    'general-control'   = @(@('=1/3', 'General'), @('=10/3', 'General'), @('=-2/7', 'General'))
+    'date-time-control' = @(@('=45000.123456', 'm/d/yyyy'), @('=1/3+0.0001', 'h:mm'), @('=45000.123456', 'm/d/yyyy h:mm'), @('=2+1/3', '[h]:mm'))
+}
+foreach ($k in $padFamilies.Keys) {
+    $cells = @(); $r = 0
+    foreach ($p in $padFamilies[$k]) { $r++; $cells += PadPair "$r" $p[0] $p[1] }
+    $cases += @{ name = "precision-displayed/pad-on-$k"; cells = $cells; pad = $true }
+}
+# Text format "@" set after the formulas (a formula typed into a text cell would be text).
+$cases += @{ name = 'precision-displayed/pad-on-text-format-control'; pad = $true
+    cells = @((F 'A1' '=10/3'), (F 'B1' '=A1*3'), (F 'A2' '=-2/7'), (F 'B2' '=A2*7'))
+    build = { param($wb, $xl) $wb.Worksheets.Item(1).Range('A1:A2').NumberFormat = '@' } }
+# A formatted cell reading a General one rounds; a General cell reading a formatted one reads
+# the rounded value; a General cell reading a General one stays exact. Excel copies A2's format
+# into B2 when =A2 is entered, so B2 is set back to General afterwards.
+$cases += @{ name = 'precision-displayed/pad-on-cross-cell-read'; pad = $true; cells = @(
+        (F 'A1' '=10/3'), (F 'B1' '=A1' '0.0'), (F 'C1' '=B1*3'), (F 'D1' '=A1*3'),
+        (F 'A2' '=20/3' '0.0'), (F 'B2' '=A2'), (F 'C2' '=B2*3'))
+    build = { param($wb, $xl) $wb.Worksheets.Item(1).Range('B2').NumberFormat = 'General' } }
+# One spilled array landing in cells formatted 0, 0.0 and 0.00: each element is rounded by
+# the format of the cell it lands in.
+$cases += @{ name = 'precision-displayed/pad-on-spill-mixed-formats'; pad = $true; cells = @(
+        @{ a = 'A1'; n = '0' }, @{ a = 'A2'; n = '0.0' }, @{ a = 'A3'; n = '0.00' },
+        @{ a = 'A1'; f2 = '=SEQUENCE(3,1,1/3,1/3)' },
+        (F 'B1:B3' '=A1*3'), (F 'C1' '=SUM(A1:A3)'))
+    # Excel copies A1's "0" into C1 when the SUM is entered; C1 is meant to be General.
+    build = { param($wb, $xl) $wb.Worksheets.Item(1).Range('C1').NumberFormat = 'General' } }
+
+# ---------------------------------------------------------------- 15. more false circular references
+# Iteration off throughout. C1 depends on A1; whether A1's formula really reads C1 decides.
+$circBase = @((V 'B1' 5), (T 'B2' 'x'), (T 'C2' 'y'), (V 'B3' 7), (V 'C3' 9))
+# The twin of sumifs-later-criteria-range with the two criteria pairs swapped.
+$cases += @{ name = 'circular/sumifs-first-criteria-range'; cells = $circBase + @(
+        (F 'A1' '=SUMIFS(B3:C3,B1:C1,">0",B2:C2,"x")'), (F 'C1' '=A1*2')) }
+$cases += @{ name = 'circular/sumifs-size-mismatch-value-error'; cells = $circBase + @(
+        (F 'A1' '=SUMIFS(B1:C1,B2:D2,"x")'), (F 'C1' '=A1*2')) }
+$cases += @{ name = 'circular/sumifs-array-criterion-unselected'; cells = $circBase + @(
+        (F 'A1' '=SUM(SUMIFS(B1:C1,B2:C2,{"x","z"}))'), (F 'C1' '=A1*2')) }
+$cases += @{ name = 'circular/sumifs-array-criterion-selected'; cells = $circBase + @(
+        (F 'A1' '=SUM(SUMIFS(B1:C1,B2:C2,{"x","y"}))'), (F 'C1' '=A1*2')) }
+$cases += @{ name = 'circular/averageifs-unselected-cell'; cells = $circBase + @(
+        (F 'A1' '=AVERAGEIFS(B1:C1,B2:C2,"x")'), (F 'C1' '=A1*2')) }
+$cases += @{ name = 'circular/maxifs-unselected-cell'; cells = $circBase + @(
+        (F 'A1' '=MAXIFS(B1:C1,B2:C2,"x")'), (F 'C1' '=A1*2')) }
+$cases += @{ name = 'circular/minifs-unselected-cell'; cells = $circBase + @(
+        (F 'A1' '=MINIFS(B1:C1,B2:C2,"x")'), (F 'C1' '=A1*2')) }
+$cases += @{ name = 'circular/countifs-later-criteria-range'; cells = $circBase + @(
+        (F 'A1' '=COUNTIFS(B2:C2,"x",B1:C1,">0")'), (F 'C1' '=A1*2')) }
+$cases += @{ name = 'circular/countifs-first-criteria-range'; cells = $circBase + @(
+        (F 'A1' '=COUNTIFS(B1:C1,">0",B2:C2,"x")'), (F 'C1' '=A1*2')) }
+
+# ---------------------------------------------------------------- 16. more legacy formulas in .xls
+$cases += @{ name = 'legacy-xls/cse-single-cell-array'; formats = @('xls', 'xlsx'); cells = @(
+        (V 'A1' 1), (V 'A2' 2), (V 'A3' 3), (V 'B1' 4), (V 'B2' 5), (V 'B3' 6),
+        @{ a = 'D1'; fa = '=SUM(A1:A3*B1:B3)' }, @{ a = 'D2'; fa = '=MAX(A1:A3-B1:B3)' },
+        (F 'D3' '=SUMPRODUCT(A1:A3,B1:B3)')) }
+# A formula filled down a range is stored as a shared formula (SHRFMLA in .xls).
+$cases += @{ name = 'legacy-xls/shared-formula-fill-down'; formats = @('xls', 'xlsx'); cells = @(
+        (V 'A1' 3), (V 'A2' 1), (V 'A3' 4), (V 'A4' 1), (V 'A5' 5), (V 'A6' 9),
+        (F 'B1:B6' '=A1*2+1'), (F 'C1:C6' '=B1+$A$1'), (F 'D1' '=SUM(C1:C6)')) }
+# A range inside an operator inside SUM, entered as a legacy formula: implicitly intersected
+# (the row's cell, or #VALUE! outside the range); the CSE copy sums the whole array.
+$cases += @{ name = 'legacy-xls/implicit-intersection-inside-sum'; formats = @('xls', 'xlsx'); cells = @(
+        (V 'A1' 12), (V 'A2' 24), (V 'A3' 36),
+        (F 'C2' '=MAX(SUM(A1:A3/12),0)'), (F 'C5' '=MAX(SUM(A1:A3/12),0)'),
+        @{ a = 'C1'; fa = '=MAX(SUM(A1:A3/12),0)' }, (F 'C3' '=SUM(A1:A3)/12')) }
+
+# ---------------------------------------------------------------- 17. round-trip: document properties
+# Saved with personal information removed, so Author and Last Author are empty, but
+# docProps/core.xml still carries the created and modified dates, which a save must keep.
+$cases += @{ name = 'round-trip/core-properties-blank-author'; cells = @((V 'A1' 2), (F 'A2' '=A1*21')) }
 
 $cases

@@ -43,7 +43,7 @@ function Write-Listing($wb, $cells) {
     # it for a formula.
     $bySheet = [ordered]@{}
     foreach ($c in $cells) {
-        if (-not $c.f) { continue }
+        if (-not ($c.f -or $c.f2 -or $c.fa)) { continue }
         $sheet = $wb.Worksheets.Item(1).Name; $a = $c.a
         if ($a -match '^(.+)!(.+)$') { $sheet = $Matches[1]; $a = $Matches[2] }
         if (-not $bySheet.Contains($sheet)) { $bySheet[$sheet] = @() }
@@ -82,9 +82,14 @@ function New-CaseWorkbook($xl, $case, [string]$fmt, [string]$stagePath) {
             if ($c.n) { $rg.NumberFormat = $c.n }
             if ($c.ContainsKey('t')) { $rg.NumberFormat = '@'; $rg.Value2 = [string]$c.t }
             elseif ($c.ContainsKey('v')) { $rg.Value2 = [double]$c.v }
-            else { $rg.Formula = $c.f }
+            elseif ($c.ContainsKey('f2')) { $rg.Formula2 = $c.f2 }      # dynamic-array (spilling) formula
+            elseif ($c.ContainsKey('fa')) { $rg.FormulaArray = $c.fa }  # Ctrl+Shift+Enter array formula
+            elseif ($c.ContainsKey('f')) { $rg.Formula = $c.f }
         }
-        if ($case.build) { & $case.build $wb $xl }
+        # The build step also gets the staging and output folders, for cases that open a second
+        # workbook (pivot-external/ opens its source from the staging folder, so the saved link is
+        # relative).
+        if ($case.build) { & $case.build $wb $xl @{ stage = $Stage; outRoot = $OutRoot } }
         if ($case.list -ne $false) { Write-Listing $wb $case.cells }
         if ($case.pad) { $wb.PrecisionAsDisplayed = $true }
         $xl.CalculateFull()
@@ -96,6 +101,8 @@ function New-CaseWorkbook($xl, $case, [string]$fmt, [string]$stagePath) {
     }
     finally {
         $wb.Close($false)
+        # Close anything the build step opened (e.g. a pivot source workbook), unsaved.
+        while ($xl.Workbooks.Count -gt 0) { $xl.Workbooks.Item(1).Close($false) }
     }
 }
 
