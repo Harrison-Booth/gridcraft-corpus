@@ -41,6 +41,9 @@ $subShape = @(
 )
 $cases += @{ name = 'near-zero/sub-reordered-parts-small'; cells = $small + $subShape }
 $cases += @{ name = 'near-zero/sub-reordered-parts-large'; cells = $large + $subShape }
+# Residue 5.96e-8: above gridcraft-cli check's default 1e-9 tolerance, so the root snap itself
+# shows as a mismatch (the residues above pass the tolerance and show only downstream).
+$cases += @{ name = 'near-zero/sub-reordered-parts-above-tolerance'; cells = @((V 'D1' 300000000.1), (V 'D2' 0.1), (V 'D3' 0.1)) + $subShape }
 $cases += @{ name = 'near-zero/sum-reordered-parts-large'; cells = $large + @(
         (F 'A1' '=SUM(D1:D3)'), (F 'B1' '=SUM(D3,D2,D1)'),
         (F 'C1' '=SUM(D1:D3)-SUM(D3,D2,D1)'), (F 'C2' '=SUM(A1,-B1)'), (F 'C3' '=SUM(A1-B1)'),

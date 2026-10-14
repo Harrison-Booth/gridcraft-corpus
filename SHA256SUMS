@@ -30,6 +30,7 @@ f240ea6a5c06540a21c12d9c803828efa912af75362a05fe2386ccd1fac991b5  excel/legacy-x
 2f93af5ed67b4739737901af15cd548420a48e39de89ebf362420b48827076d2  excel/near-zero/downstream-division.xlsx
 23e388cfae371ba6e097942ba5594792f39bf6b7379dcdb9a7f63fb448547a9e  excel/near-zero/downstream-if-positive-iterate-on.xlsx
 d11346a2880ff664edaa22fa136ffb8bb4e3cc7865b85c65065a9f369d996066  excel/near-zero/downstream-if-positive.xlsx
+f29eb93b3a3f72c479d05939ab110c8628e53ce3b50f9584c18b989166a56aff  excel/near-zero/sub-reordered-parts-above-tolerance.xlsx
 8645e46fd1b9f5432a3dab710313aa3b976e08a874a1606328a336f1a1e33adf  excel/near-zero/sub-reordered-parts-large.xlsx
 1fce601a7992a1a01523691a7630298787fde3dc245d5edd87aebfccd99626b9  excel/near-zero/sub-reordered-parts-small.xlsx
 7bfdcf7887838ec53b21b7614852c7f71ffa434760e5cbf7f6f386a8ea02ac5f  excel/near-zero/sum-reordered-parts-large.xlsx

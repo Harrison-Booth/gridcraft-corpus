@@ -27,7 +27,7 @@ One top-level folder per authoring application:
 
 | Folder | Source | Files |
 |---|---|---:|
-| [`excel/`](#excel-excel-oracle-workbooks) | Microsoft Excel for Microsoft 365 (16.0, build 20430, en-US), driven by [`tools/excel-oracles/`](tools/excel-oracles) | 46 |
+| [`excel/`](#excel-excel-oracle-workbooks) | Microsoft Excel for Microsoft 365 (16.0, build 20430, en-US), driven by [`tools/excel-oracles/`](tools/excel-oracles) | 47 |
 
 Also in the repository:
 
@@ -53,6 +53,10 @@ target/release/gridcraft-cli check ../gridcraft-corpus/excel/legacy-xls/*.xls ..
 (GridCraft's saved copy against the source). Its default tolerance is 1e-9, relative above
 magnitude 1 and absolute below, so a raw residue such as 1.2e-10 where Excel shows 0 passes on
 its own and shows up only in the cells downstream (see `near-zero/`).
+
+The upward chains in `dependency-chain/` overflow the stack of GridCraft 0.6.1 (main at
+84acf62), which ends the whole `check` run with no output. Until that is fixed, check that folder
+file by file, or leave it out.
 
 ## Verifying
 
@@ -94,14 +98,14 @@ repository's history once it is published; consumers pin commits.
 
 ## `excel/`: Excel oracle workbooks
 
-46 files (43 `.xlsx`, 3 `.xls`), 0.66 MB in total. The cases are synthetic shapes of failure
+47 files (44 `.xlsx`, 3 `.xls`), 0.67 MB in total. The cases are synthetic shapes of failure
 classes found by running GridCraft over real-world workbooks; only the shapes were kept.
 Each file with a handful of formulas also has a text listing (`C1: =A1-B1`) two columns right of
 its used range, so it explains itself when opened.
 
 | Directory | Files | What it exercises | Excel's answer |
 |---|---:|---|---|
-| `near-zero/` | 6 | `=A1-B1` where A1 and B1 are the same three parts summed in a different order (`0.1+0.2+0.3`, `1000000.1+0.7+0.2`); SUM variants; the same difference in parentheses, inside `IF(...>0)` and as a divisor; one copy with iteration on | The final `-` of a formula snaps to 0, so `=A1-B1` is 0 and `=1/C1` is `#DIV/0!`. Inside parentheses, a comparison or `SUM(A1-B1)` the residue (1.16e-10) survives, so `IF(A1-B1>0,…)` is TRUE |
+| `near-zero/` | 7 | `=A1-B1` where A1 and B1 are the same three parts summed in a different order (`0.1+0.2+0.3`, `1000000.1+0.7+0.2`, and `300000000.1+0.1+0.1`, whose 5.96e-8 residue is above `check`'s tolerance); SUM variants; the same difference in parentheses, inside `IF(...>0)` and as a divisor; one copy with iteration on | The final `-` of a formula snaps to 0, so `=A1-B1` is 0 and `=1/C1` is `#DIV/0!`. Inside parentheses, a comparison or `SUM(A1-B1)` the residue (1.16e-10) survives, so `IF(A1-B1>0,…)` is TRUE |
 | `power-negative/` | 4 | `^` and `POWER` with a negative base: odd roots (`(-8)^(1/3)`, `(-32)^(1/5)`, `(-8)^0.2`, negative exponents, cell operands), even roots and 14-digit exponents that stay `#NUM!`, and the exponent limit (1/2147483645 works, 1/2147483647 and 1/1E15 don't) | `(-8)^(1/3)` = -1.9999999999999998 |
 | `criteria-ref-error/` | 10 | `#REF!` in a range argument of SUMIF, SUMIFS, COUNTIF, COUNTIFS, AVERAGEIF, AVERAGEIFS, MAXIFS, MINIFS; a `#REF!` criterion as a control; the realistic origin, a deleted sheet | `#REF!` for every range position; a `#REF!` criterion gives 0 |
 | `date-text/` | 5 | Date text with month names and without separators: `"1Jan"`, `"Jan1"`, `"1 Jan"`, `"Jan 2021"`, `"1Jan21"`, `"15Mar2024"`, `MONTH(1&"Feb")`, `DAY("15Mar")`; numbers read as two-digit years (`"Jan 32"`, `"Feb 29"`); inputs that stay `#VALUE!` | See the year note below |

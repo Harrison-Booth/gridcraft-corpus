@@ -33,7 +33,9 @@
    for the cases you touched. Every line must read `ok` or `skip`, and the metadata line must say
    `0 problems`. Open a file or two in Excel and look.
 4. **Check against GridCraft:** `gridcraft-cli check excel/ --json` (and the `.xls` files by
-   name). New cases are expected to mismatch until GridCraft is fixed; that's the point.
+   name). New cases are expected to mismatch until GridCraft is fixed; that's the point. If one
+   file crashes the engine (the `dependency-chain/` files do on 0.6.1), the whole run stops with
+   no output, so check that file on its own.
 5. **Always update `SHA256SUMS`** in the same commit:
    `find excel -type f \( -name '*.xlsx' -o -name '*.xls' \) | LC_ALL=C sort | xargs sha256sum --text > SHA256SUMS`
 6. **One commit per batch**, naming what changed and the Excel version and build (the
