@@ -409,4 +409,48 @@ $cases += @{ name = 'legacy-xls/implicit-intersection-inside-sum'; formats = @('
 # docProps/core.xml still carries the created and modified dates, which a save must keep.
 $cases += @{ name = 'round-trip/core-properties-blank-author'; cells = @((V 'A1' 2), (F 'A2' '=A1*21')) }
 
+
+# ---------------------------------------------------------------- 17. Analysis ToolPak value arguments
+# EOMONTH, WORKDAY, COUPDAYS, BIN2DEC and the other Analysis ToolPak functions give #VALUE! for a
+# reference to more than one cell in a value argument (no implicit intersection, no spill), while
+# array constants and computed arrays lift. Range arguments (holidays, cash flows) take ranges.
+$atpData = @((V 'A1' 45000), (V 'A2' 45031), (V 'A3' 45061), (V 'B1' 1), (V 'B2' 2), (V 'B3' 3), (V 'C2' 7),
+    (V 'F1' 1), (V 'F2' 2), (V 'F3' 11))
+function Column2([string[]]$formulas, [string]$col, [int]$step = 1) {
+    $i = 0
+    foreach ($f in $formulas) { $i++; @{ a = "$col$(1 + ($i - 1) * $step)"; f2 = $f } }
+}
+$cases += @{ name = 'atp-array-args/date-functions'; cells = $atpData + @(Column2 @(
+            '=EOMONTH(A1:A3,1)', '=EOMONTH(A1,B1:B3)', '=EDATE(A1:A3,1)', '=EDATE(A1,B1:B3)', '=WORKDAY(A1:A3,1)',
+            '=WORKDAY(A1,B1:B3)', '=WORKDAY.INTL(A1:A3,1)', '=NETWORKDAYS(A1:A3,A3)', '=NETWORKDAYS.INTL(A1,A1:A3)',
+            '=YEARFRAC(A1:A3,A3)', '=YEARFRAC(A1,A3,B1:B2)', '=WEEKNUM(A1:A3)', '=WEEKNUM(A1,B1:B3)',
+            '=SUMPRODUCT(EOMONTH(A1:A3,0))', '=EOMONTH(A1:A1,0)', '=WORKDAY(A1,1,A1:A3)', '=NETWORKDAYS(A1,A3,A1:A3)') 'H') }
+$cases += @{ name = 'atp-array-args/financial-functions'; cells = $atpData + @(Column2 @(
+            '=COUPDAYS(A1:A3,46000,2,0)', '=COUPNCD(A1,46000,B1:B2,0)', '=DISC(A1:A3,46000,98,100,0)', '=DISC(A1,46000,98,100,B1:B3)',
+            '=PRICE(A1:A3,46000,0.05,0.06,100,2,0)', '=YIELD(A1,46000,0.05,98,100,B1:B2,0)', '=ACCRINT(44800,45100,A1:A3,0.05,1000,2,0)',
+            '=TBILLPRICE(A1:A3,45100,0.05)', '=EFFECT(B1:B3,4)', '=CUMIPMT(0.01,12,1000,B1:B3,12,0)', '=XNPV(B1:B2,B1:B3,A1:A3)',
+            '=XNPV(0.1,B1:B3,A1:A3)', '=FVSCHEDULE(B1:B2,{0.1,0.2})', '=FVSCHEDULE(100,B1:B3)', '=COUPDAYS(A1:A1,46000,2,0)') 'H') }
+$cases += @{ name = 'atp-array-args/math-engineering-functions'; cells = $atpData + @(Column2 @(
+            '=ISEVEN(B1:B3)', '=ISODD(B1:B3)', '=QUOTIENT(C1:C3,2)', '=MROUND(B1:B3,2)', '=SQRTPI(B1:B3)', '=SERIESSUM(B1:B2,1,1,B1:B3)',
+            '=SERIESSUM(2,1,1,B1:B3)', '=BIN2DEC(B1:B3)', '=DEC2HEX(B1:B3)', '=DEC2BIN(5,B1:B3)', '=CONVERT(B1:B3,"m","ft")',
+            '=DELTA(B1:B3,1)', '=ERF(B1:B3)', '=BESSELJ(B1:B3,1)', '=COMPLEX(B1:B3,2)', '=IMABS(B1:B3)', '=IMSUM(B1:B3)') 'H') }
+# Spilling: constants and computed arrays lift; a rejected reference adds no shape.
+$cases += @{ name = 'atp-array-args/lifted-arrays'; cells = $atpData + @(Column2 @(
+            '=EOMONTH(A1:A3+0,0)', '=EOMONTH(A1,{1,2})', '=EOMONTH(A1,{1;2})', '=EOMONTH(A1:A3,{1;2})', '=EOMONTH(TRANSPOSE(A1:A3),0)',
+            '=MAP(A1:A3,LAMBDA(x,EOMONTH(x,0)))', '=NETWORKDAYS.INTL(A1,A3+30,F1:F3)', '=ISOWEEKNUM(A1:A3)', '=BITAND(B1:B3,1)',
+            '=COUPDAYS(A1:A3+0,46000,2,0)') 'H' 4) }
+# However the reference is formed. Formulas in row 2, inside A1:A3's rows.
+$cases += @{ name = 'atp-array-args/reference-forms'; cells = $atpData + @(
+        @{ a = 'H2'; f2 = '=EOMONTH(INDEX(A1:A3,0,1),0)' }, @{ a = 'I2'; f2 = '=EOMONTH(OFFSET(A1,0,0,3,1),0)' },
+        @{ a = 'J2'; f2 = '=EOMONTH(IF(TRUE,A1:A3),0)' }, @{ a = 'K2'; f2 = '=EOMONTH(CHOOSE(1,A1:A3),0)' },
+        @{ a = 'L2'; f2 = '=LET(x,A1:A3,EOMONTH(x,0))' }, @{ a = 'M2'; f2 = '=EOMONTH((A1,A2),0)' },
+        @{ a = 'N2'; f2 = '=EOMONTH(A:A,0)' }, @{ a = 'O2'; f2 = '=EOMONTH(A1:INDEX(A1:A3,3),0)' },
+        @{ a = 'P2'; f2 = '=EOMONTH(INDEX(A1:A3,2),0)' }, @{ a = 'Q2'; f2 = '=EOMONTH(OFFSET(A1,0,0,1,1),0)' },
+        @{ a = 'R2'; f2 = '=EOMONTH(A1:A3 A2:C2,0)' }, @{ a = 'S2'; f2 = '=EOMONTH(@A1:A3,0)' })
+    build = { param($wb, $xl) [void]$wb.Names.Add('Dates', '=Sheet1!$A$1:$A$3'); $wb.Worksheets.Item(1).Range('T2').Formula2 = '=EOMONTH(Dates,0)' } }
+# Legacy formulas (Range.Formula): no implicit intersection for value arguments, unlike YEAR.
+$cases += @{ name = 'atp-array-args/legacy-formulas'; formats = @('xlsx'); cells = $atpData + @(
+        (F 'H2' '=EOMONTH(A1:A3,1)'), (F 'I2' '=WORKDAY(A1:A3,1)'), (F 'J2' '=COUPDAYS(A1:A3,46000,2,0)'), (F 'K2' '=BIN2DEC(B1:B3)'),
+        (F 'L2' '=YEAR(A1:A3)'), (F 'M2' '=NETWORKDAYS.INTL(A1,A3,F1:F3)'), (F 'N2' '=WORKDAY(A1,1,A1:A3)')) }
+
 $cases
