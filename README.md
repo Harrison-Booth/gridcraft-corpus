@@ -27,7 +27,7 @@ One top-level folder per authoring application:
 
 | Folder | Source | Files |
 |---|---|---:|
-| [`excel/`](#excel-excel-oracle-workbooks) | Microsoft Excel for Microsoft 365 (16.0, build 20430, en-US), driven by [`tools/excel-oracles/`](tools/excel-oracles) | 88 |
+| [`excel/`](#excel-excel-oracle-workbooks) | Microsoft Excel for Microsoft 365 (16.0, build 20430, en-US), driven by [`tools/excel-oracles/`](tools/excel-oracles) | 104 |
 
 Also in the repository:
 
@@ -98,7 +98,7 @@ repository's history once it is published; consumers pin commits.
 
 ## `excel/`: Excel oracle workbooks
 
-88 files (82 `.xlsx`, 6 `.xls`), 1.13 MB in total. The cases are synthetic shapes of failure
+104 files (98 `.xlsx`, 6 `.xls`), 1.33 MB in total. The cases are synthetic shapes of failure
 classes found by running GridCraft over real-world workbooks; only the shapes were kept.
 Each file with a handful of formulas also has a text listing (`C1: =A1-B1`) two columns right of
 its used range, so it explains itself when opened.
@@ -116,7 +116,7 @@ its used range, so it explains itself when opened.
 | `rate/` | 2 | `RATE(n,0,pv,0)` and `RATE(n,0,pv,tiny fv)` | `RATE(5,0,-100,0)` = -0.9999994091451825; `RATE(1,0,-100,0)` and `RATE(5,0,0,0)` are `#NUM!` |
 | `round-trip/` | 3 | A PivotTable from an in-sheet range (row field, sum of values) with `GETPIVOTDATA`, a clustered column chart over a range, and a two-cell workbook whose author fields are blank but whose `docProps/core.xml` carries the created and modified dates | For round-trip loss; their formulas are a light calc check |
 | `pivot-external/` | 4 | PivotTables whose source is in a second workbook, `source-data.xlsx` (committed next to them): a range, a defined name in that workbook, and two PivotTables sharing one cache. The link is saved relative (`Target="source-data.xlsx"`), so it resolves inside the repository | `GETPIVOTDATA` over them gives 58, 392, 156 (and 107 for the second PivotTable) |
-| `getpivotdata/` | 2 | `GETPIVOTDATA` against an in-sheet PivotTable with two row fields: grand total, one and two field/item pairs, the data field by caption, mixed case, a cell inside the PivotTable as the reference, an item from a cell; a missing item, an inner field alone and an unknown data field; SUMIFS over the same rows as a control | 392, 107, 72; `#REF!` for the missing item, the inner field alone and the unknown field |
+| `getpivotdata/` | 12 | `GETPIVOTDATA` against an in-sheet PivotTable with two row fields: grand total, one and two field/item pairs, the data field by caption, mixed case, a cell inside the PivotTable as the reference, an item from a cell; a missing item, an inner field alone and an unknown data field; SUMIFS over the same rows as a control; ten more shapes: row and column fields, report filters, totals off, dates and numbers as items, renamed captions, hidden items, several data fields, a stale report (source edited, PivotTable not refreshed) and a tabular PivotTable on another sheet | 392, 107, 72; `#REF!` for the missing item, the inner field alone and the unknown field |
 
 **Locale.** Excel ran as en-US (country code 1, decimal `.`, month-day-year). Date-text parsing
 depends on it, and on Windows' two-digit-year window (1930-2029): `"Feb 29"` is February 2029 and
@@ -151,6 +151,16 @@ iteration stopped, so a near match is the expected result there.
 | `pivot-external/shared-cache.xlsx` | Two PivotTables (by Category, by Region) on one external cache |
 | `getpivotdata/field-item-forms.xlsx` | Ten `GETPIVOTDATA` forms, six with values and four that are `#REF!` |
 | `getpivotdata/sumifs-control.xlsx` | Control: the same PivotTable, totals from `SUM`/`SUMIFS` only |
+| `getpivotdata/row-col-fields.xlsx` | Region by Category cross-tab: grand total, one and two items in either order, an empty intersection (0), a cell inside the data area as the reference; a reference off the PivotTable and an unknown item are `#REF!` |
+| `getpivotdata/report-filter.xlsx` | A report filter showing one item, one showing (All), and one with a single item hidden: the totals follow what is shown, and items filtered out are `#REF!` |
+| `getpivotdata/totals-off.xlsx` | Subtotals and grand totals turned off: `#REF!` for the grand total and for Region alone, values for Region with Category |
+| `getpivotdata/date-number-items.xlsx` | Dates and numbers as items: `DATE()`, a serial and the text `3/10/2026` give values, `2026-01-15` and a date with no data are `#REF!`; the numbers `10` and `"20"` give values, `10.5` is `#REF!` |
+| `getpivotdata/captions.xlsx` | A renamed data field, field and item: the caption (`Area`, `North Zone`) is what Excel accepts for the field and the item; the data field answers to its caption and to its source name, and the source field and item names are `#REF!` |
+| `getpivotdata/hidden-items.xlsx` | Items hidden by a filter (a Region and a Category): a hidden item is `#REF!` and the grand total covers what is shown |
+| `getpivotdata/multi-data-fields.xlsx` | Four data fields (sum, count, average, % of total), each asked for by its caption; the plain source name answers with the first |
+| `getpivotdata/stale-report.xlsx` | Source edited and the PivotTable not refreshed: `GETPIVOTDATA` returns the displayed (old) value, `SUMIFS` the new one |
+| `getpivotdata/stale-report-sorted.xlsx` | The same with the source sorted by Region, which separates a stale report from an item-order difference |
+| `getpivotdata/tabular-other-sheet.xlsx` | A tabular PivotTable on another sheet: a field/item pair, a missing field and a reference given as a wide range |
 | `date-text/month-name-day-this-year-y2026.xlsx` | `"Jan-21"`, `"Jan/21"`, `"Jan-1"`, `"Jan/1"`, `"Jan-30"`, `"1Janu"`, `"Janu 1"`, `"1Febr"`, `"01Jan"`, `"Sep 1"`: days in the current year |
 | `date-text/month-name-number-as-year-separators.xlsx` | `"Jan-32"`, `"Jan/32"`, `"Jan-0"`, `"Feb-30"` and `"Jan 32"+0`-style coercion: the number is a year |
 | `date-text/two-digit-year-window.xlsx` | `"1Jan29"` is 2029, `"1Jan30"` 1930, with and without separators |

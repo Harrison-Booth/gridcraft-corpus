@@ -287,6 +287,167 @@ $cases += @{ name = 'getpivotdata/sumifs-control'; build = $gpdBuild
     cells = $pivotRows + @((F 'I1' '=SUM(C2:C9)'), (F 'I2' '=SUMIFS(C2:C9,A2:A9,"north")'),
         (F 'I3' '=SUMIFS(C2:C9,A2:A9,"north",B2:B9,"a")'), (F 'I4' '=SUMIFS(C2:C9,A2:A9,"south")')) }
 
+
+# ---------------------------------------------------------------- 12b. GETPIVOTDATA shapes
+# Ten more shapes, each probed in Excel 16.0 en-US: row and column fields, report filters, totals
+# off, dates and numbers as items, renamed captions, hidden items, several data fields, a stale
+# report (source edited, PivotTable not refreshed), and a tabular PivotTable on another sheet.
+# Source: Region, Category, Amount, Date (serial) and Size over A1:E9. The formulas are in Q.
+$gpdRows5 = @((T 'A1' 'Region'), (T 'B1' 'Category'), (T 'C1' 'Amount'), (T 'D1' 'Date'), (T 'E1' 'Size'),
+    (T 'A2' 'north'), (T 'B2' 'a'), (V 'C2' 11), (V 'D2' 46037 'm/d/yyyy'), (V 'E2' 10),
+    (T 'A3' 'south'), (T 'B3' 'b'), (V 'C3' 23), (V 'D3' 46037 'm/d/yyyy'), (V 'E3' 20),
+    (T 'A4' 'north'), (T 'B4' 'b'), (V 'C4' 35), (V 'D4' 46054 'm/d/yyyy'), (V 'E4' 10),
+    (T 'A5' 'east'), (T 'B5' 'a'), (V 'C5' 47), (V 'D5' 46054 'm/d/yyyy'), (V 'E5' 20),
+    (T 'A6' 'south'), (T 'B6' 'a'), (V 'C6' 59), (V 'D6' 46037 'm/d/yyyy'), (V 'E6' 10),
+    (T 'A7' 'north'), (T 'B7' 'a'), (V 'C7' 61), (V 'D7' 46091 'm/d/yyyy'), (V 'E7' 20),
+    (T 'A8' 'east'), (T 'B8' 'c'), (V 'C8' 72), (V 'D8' 46091 'm/d/yyyy'), (V 'E8' 10),
+    (T 'A9' 'south'), (T 'B9' 'c'), (V 'C9' 84), (V 'D9' 46054 'm/d/yyyy'), (V 'E9' 20))
+function New-GpdPivot($wb, [string]$at, [string]$name, [string[]]$rowF, [string[]]$colF, [string[]]$pageF, [string]$sheet = 'Sheet1') {
+    $pc = $wb.PivotCaches().Create(1, 'Sheet1!R1C1:R9C5')
+    $pt = $pc.CreatePivotTable($wb.Worksheets.Item($sheet).Range($at), $name)
+    $pos = 0; foreach ($f in $rowF) { $pos++; $pf = $pt.PivotFields($f); $pf.Orientation = 1; $pf.Position = $pos }   # xlRowField
+    $pos = 0; foreach ($f in $colF) { $pos++; $pf = $pt.PivotFields($f); $pf.Orientation = 2; $pf.Position = $pos }   # xlColumnField
+    foreach ($f in $pageF) { $pt.PivotFields($f).Orientation = 3 }                                                    # xlPageField
+    return $pt
+}
+function Add-GpdSum($pt, [string]$caption = 'Sum of Amount', [int]$fn = -4157) {
+    return $pt.AddDataField($pt.PivotFields('Amount'), $caption, $fn)
+}
+$cases += @{ name = 'getpivotdata/row-col-fields'; cells = $gpdRows5 + @((F 'Q1' '=GETPIVOTDATA("Amount",$G$3)'),
+        (F 'Q2' '=GETPIVOTDATA("Amount",$G$3,"Region","north")'),
+        (F 'Q3' '=GETPIVOTDATA("Amount",$G$3,"Category","a")'),
+        (F 'Q4' '=GETPIVOTDATA("Amount",$G$3,"Region","south","Category","c")'),
+        (F 'Q5' '=GETPIVOTDATA("Amount",$G$3,"Category","c","Region","east")'),
+        (F 'Q6' '=GETPIVOTDATA("Amount",$G$3,"Region","east","Category","b")'),
+        (F 'Q7' '=GETPIVOTDATA("Amount",$H$5,"Category","b")'),
+        (F 'Q8' '=GETPIVOTDATA("Amount",$A$20)'),
+        (F 'Q9' '=GETPIVOTDATA("Amount",$G$3,"Category","d")'))
+    build = {
+        param($wb, $xl)
+        $pt = New-GpdPivot $wb 'G3' 'PT1' @('Region') @('Category') @(); [void](Add-GpdSum $pt)
+    } }
+$cases += @{ name = 'getpivotdata/report-filter'; cells = $gpdRows5 + @((F 'Q1' '=GETPIVOTDATA("Amount",$G$5)'),
+        (F 'Q2' '=GETPIVOTDATA("Amount",$G$5,"Category","a")'),
+        (F 'Q3' '=GETPIVOTDATA("Amount",$G$5,"Region","north")'),
+        (F 'Q4' '=GETPIVOTDATA("Amount",$G$5,"Region","south")'),
+        (F 'Q5' '=GETPIVOTDATA("Amount",$G$5,"Region","north","Category","b")'),
+        (F 'Q6' '=GETPIVOTDATA("Amount",$G$3,"Category","a")'),
+        (F 'Q7' '=GETPIVOTDATA("Amount",$G$20)'),
+        (F 'Q8' '=GETPIVOTDATA("Amount",$G$20,"Region","north")'),
+        (F 'Q9' '=GETPIVOTDATA("Amount",$G$20,"Category","c")'),
+        (F 'Q10' '=GETPIVOTDATA("Amount",$G$35)'),
+        (F 'Q11' '=GETPIVOTDATA("Amount",$G$35,"Region","north")'),
+        (F 'Q12' '=GETPIVOTDATA("Amount",$G$35,"Category","a")'))
+    build = {
+        param($wb, $xl)
+        $pt = New-GpdPivot $wb 'G5' 'PT1' @('Category') @() @('Region'); [void](Add-GpdSum $pt)
+        $pt.PivotFields('Region').CurrentPage = 'north'
+        $p2 = New-GpdPivot $wb 'G20' 'PT2' @('Category') @() @('Region'); [void](Add-GpdSum $p2)
+        $p3 = New-GpdPivot $wb 'G35' 'PT3' @('Category') @() @('Region'); [void](Add-GpdSum $p3)
+        $pf = $p3.PivotFields('Region'); $pf.EnableMultiplePageItems = $true; $pf.PivotItems('east').Visible = $false
+    } }
+$cases += @{ name = 'getpivotdata/totals-off'; cells = $gpdRows5 + @((F 'Q1' '=GETPIVOTDATA("Amount",$G$3)'),
+        (F 'Q2' '=GETPIVOTDATA("Amount",$G$3,"Region","north")'),
+        (F 'Q3' '=GETPIVOTDATA("Amount",$G$3,"Region","north","Category","a")'),
+        (F 'Q4' '=GETPIVOTDATA("Amount",$G$3,"Region","south","Category","c")'))
+    build = {
+        param($wb, $xl)
+        $pt = New-GpdPivot $wb 'G3' 'PT1' @('Region', 'Category') @() @(); [void](Add-GpdSum $pt)
+        $pt.PivotFields('Region').Subtotals = [object[]](@($false) * 12)
+        $pt.ColumnGrand = $false; $pt.RowGrand = $false
+    } }
+$cases += @{ name = 'getpivotdata/date-number-items'; cells = $gpdRows5 + @((F 'Q1' '=GETPIVOTDATA("Amount",$G$3,"Date",DATE(2026,1,15))'),
+        (F 'Q2' '=GETPIVOTDATA("Amount",$G$3,"Date",46054)'),
+        (F 'Q3' '=GETPIVOTDATA("Amount",$G$3,"Date","3/10/2026")'),
+        (F 'Q4' '=GETPIVOTDATA("Amount",$G$3,"Date","2026-01-15")'),
+        (F 'Q5' '=GETPIVOTDATA("Amount",$G$3,"Date",DATE(2026,1,16))'),
+        (F 'Q6' '=GETPIVOTDATA("Amount",$G$20,"Size",10)'),
+        (F 'Q7' '=GETPIVOTDATA("Amount",$G$20,"Size","20")'),
+        (F 'Q8' '=GETPIVOTDATA("Amount",$G$20,"Size",10.5)'))
+    build = {
+        param($wb, $xl)
+        $pt = New-GpdPivot $wb 'G3' 'PT1' @('Date') @() @(); [void](Add-GpdSum $pt)
+        # Undo automatic date grouping if Excel applied it.
+        try { if ($pt.PivotFields().Count -gt 5) { [void]$pt.PivotFields('Date').DataRange.Cells.Item(1).Ungroup() } } catch { }
+        $p2 = New-GpdPivot $wb 'G20' 'PT2' @('Size') @() @(); [void](Add-GpdSum $p2)
+    } }
+$cases += @{ name = 'getpivotdata/captions'; cells = $gpdRows5 + @((F 'Q1' '=GETPIVOTDATA("Total Amount",$G$3)'),
+        (F 'Q2' '=GETPIVOTDATA("Amount",$G$3)'),
+        (F 'Q3' '=GETPIVOTDATA("Sum of Amount",$G$3)'),
+        (F 'Q4' '=GETPIVOTDATA("Amount",$G$3,"Area","south")'),
+        (F 'Q5' '=GETPIVOTDATA("Amount",$G$3,"Region","south")'),
+        (F 'Q6' '=GETPIVOTDATA("Amount",$G$3,"Region","North Zone")'),
+        (F 'Q7' '=GETPIVOTDATA("Amount",$G$3,"Region","north")'),
+        (F 'Q8' '=GETPIVOTDATA("Amount",$G$3,"Area","North Zone","Category","a")'))
+    build = {
+        param($wb, $xl)
+        $pt = New-GpdPivot $wb 'G3' 'PT1' @('Region', 'Category') @() @(); [void](Add-GpdSum $pt 'Total Amount')
+        $pf = $pt.PivotFields('Region')
+        $pf.PivotItems('north').Caption = 'North Zone'
+        $pf.Caption = 'Area'
+    } }
+$cases += @{ name = 'getpivotdata/hidden-items'; cells = $gpdRows5 + @((F 'Q1' '=GETPIVOTDATA("Amount",$G$3)'),
+        (F 'Q2' '=GETPIVOTDATA("Amount",$G$3,"Region","south")'),
+        (F 'Q3' '=GETPIVOTDATA("Amount",$G$3,"Region","east")'),
+        (F 'Q4' '=GETPIVOTDATA("Amount",$G$3,"Region","east","Category","c")'),
+        (F 'Q5' '=GETPIVOTDATA("Amount",$G$3,"Region","north","Category","b")'),
+        (F 'Q6' '=GETPIVOTDATA("Amount",$G$3,"Region","north")'))
+    build = {
+        param($wb, $xl)
+        $pt = New-GpdPivot $wb 'G3' 'PT1' @('Region', 'Category') @() @(); [void](Add-GpdSum $pt)
+        $pt.PivotFields('Region').PivotItems('south').Visible = $false
+        $pt.PivotFields('Category').PivotItems('c').Visible = $false
+    } }
+$cases += @{ name = 'getpivotdata/multi-data-fields'; cells = $gpdRows5 + @((F 'Q1' '=GETPIVOTDATA("Sum of Amount",$G$3,"Region","north")'),
+        (F 'Q2' '=GETPIVOTDATA("Count of Amount",$G$3,"Region","north")'),
+        (F 'Q3' '=GETPIVOTDATA("Average of Amount",$G$3,"Region","south")'),
+        (F 'Q4' '=GETPIVOTDATA("Amount",$G$3)'),
+        (F 'Q5' '=GETPIVOTDATA("Pct of Amount",$G$3,"Region","east")'),
+        (F 'Q6' '=GETPIVOTDATA("Count of Amount",$G$3)'))
+    build = {
+        param($wb, $xl)
+        $pt = New-GpdPivot $wb 'G3' 'PT1' @('Region') @() @()
+        [void](Add-GpdSum $pt 'Sum of Amount')
+        [void](Add-GpdSum $pt 'Count of Amount' -4112)
+        [void](Add-GpdSum $pt 'Average of Amount' -4106)
+        $df = Add-GpdSum $pt 'Pct of Amount'; $df.Calculation = 8   # xlPercentOfTotal
+    } }
+$cases += @{ name = 'getpivotdata/stale-report'; cells = $gpdRows5 + @((F 'Q1' '=GETPIVOTDATA("Amount",$G$3)'),
+        (F 'Q2' '=GETPIVOTDATA("Amount",$G$3,"Region","north")'),
+        (F 'Q3' '=GETPIVOTDATA("Amount",$G$3,"Region","south")'),
+        (F 'Q4' '=SUMIFS(C2:C9,A2:A9,"north")'))
+    build = {
+        param($wb, $xl)
+        $pt = New-GpdPivot $wb 'G3' 'PT1' @('Region') @() @(); [void](Add-GpdSum $pt)
+        $pt.ManualUpdate = $true
+        $wb.Worksheets.Item('Sheet1').Range('C2').Value2 = 1011   # north/a 11 -> 1011, PivotTable not refreshed
+    } }
+$cases += @{ name = 'getpivotdata/stale-report-sorted'; cells = $gpdRows5 + @((F 'Q1' '=GETPIVOTDATA("Amount",$G$3)'),
+        (F 'Q2' '=GETPIVOTDATA("Amount",$G$3,"Region","north")'),
+        (F 'Q3' '=GETPIVOTDATA("Amount",$G$3,"Region","south")'),
+        (F 'Q4' '=SUMIFS(C2:C9,A2:A9,"north")'))
+    build = {
+        param($wb, $xl)
+        $ws = $wb.Worksheets.Item('Sheet1')
+        # Source rows sorted by Region, so first-appearance order equals Excel's ascending order:
+        # separates a stale report from an item-order difference.
+        $sorted = @(@('east', 'a', 47), @('east', 'c', 72), @('north', 'a', 11), @('north', 'b', 35),
+            @('north', 'a', 61), @('south', 'b', 23), @('south', 'a', 59), @('south', 'c', 84))
+        for ($r = 0; $r -lt 8; $r++) { for ($c = 0; $c -lt 3; $c++) { $v = $sorted[$r][$c]; if ($c -eq 2) { $ws.Cells.Item($r + 2, $c + 1).Value2 = [double]$v } else { $ws.Cells.Item($r + 2, $c + 1).Value2 = [string]$v } } }
+        $pt = New-GpdPivot $wb 'G3' 'PT1' @('Region') @() @(); [void](Add-GpdSum $pt)
+        $ws.Range('C4').Value2 = 1011   # north/a 11 -> 1011, not refreshed
+    } }
+$cases += @{ name = 'getpivotdata/tabular-other-sheet'; sheets = @('Sheet1', 'Pivot'); cells = $gpdRows5 + @((F 'Q1' '=GETPIVOTDATA("Amount",Pivot!$A$3,"Region","north","Category","a")'),
+        (F 'Q2' '=GETPIVOTDATA("Amount",Pivot!$A$3,"Region","east")'),
+        (F 'Q3' '=GETPIVOTDATA("Amount",Pivot!$A$3)'),
+        (F 'Q4' '=GETPIVOTDATA("Amount",Pivot!$A$3,"Category","a")'),
+        (F 'Q5' '=GETPIVOTDATA("Amount",Pivot!$A$1:$H$40,"Region","south")'))
+    build = {
+        param($wb, $xl)
+        $pt = New-GpdPivot $wb 'A3' 'PT1' @('Region', 'Category') @() @() 'Pivot'; [void](Add-GpdSum $pt)
+        $pt.RowAxisLayout(1)   # xlTabularRow
+    } }
+
 # ---------------------------------------------------------------- 13. more date text
 # Probed in Excel en-US first; each file holds what Excel actually does with the form.
 # Day in the current year: a number 1-31 after a month name with "-" or "/" is a day, and long
