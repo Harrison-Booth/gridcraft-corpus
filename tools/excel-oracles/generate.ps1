@@ -96,7 +96,9 @@ function New-CaseWorkbook($xl, $case, [string]$fmt, [string]$stagePath) {
         $wb.RemovePersonalInformation = $true
         $wb.Worksheets.Item(1).Activate()
         [void]$wb.Worksheets.Item(1).Range('A1').Select()
-        if (Test-Path -LiteralPath $stagePath) { Remove-Item -LiteralPath $stagePath -Force }
+        # A build step may already have saved the workbook to its own staging path (the Data Model
+        # cases do); SaveAs then overwrites it in place.
+        if ((Test-Path -LiteralPath $stagePath) -and ($wb.FullName -ne $stagePath)) { Remove-Item -LiteralPath $stagePath -Force }
         $wb.SaveAs($stagePath, $FileFormat[$fmt])
     }
     finally {

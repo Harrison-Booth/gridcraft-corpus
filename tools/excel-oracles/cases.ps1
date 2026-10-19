@@ -614,4 +614,89 @@ $cases += @{ name = 'atp-array-args/legacy-formulas'; formats = @('xlsx'); cells
         (F 'H2' '=EOMONTH(A1:A3,1)'), (F 'I2' '=WORKDAY(A1:A3,1)'), (F 'J2' '=COUPDAYS(A1:A3,46000,2,0)'), (F 'K2' '=BIN2DEC(B1:B3)'),
         (F 'L2' '=YEAR(A1:A3)'), (F 'M2' '=NETWORKDAYS.INTL(A1,A3,F1:F3)'), (F 'N2' '=WORKDAY(A1,1,A1:A3)')) }
 
+# ---------------------------------------------------------------- 15. PivotTables on a data connection or the Data Model
+# The cache of these PivotTables is not a worksheet range: it reads a workbook connection
+# (cacheSource type="external" with a connectionId) and, for the Data Model shapes, the model
+# the workbook carries in xl/model/item.data. Every source is built from scratch inside the run:
+# a worksheet table loaded into the model, or an OLE DB connection to a small workbook the case
+# writes into the staging folder (so the connection string names a neutral folder, not a user's).
+$pdmRows = @((T 'A1' 'Region'), (T 'B1' 'Category'), (T 'C1' 'Amount'),
+    (T 'A2' 'north'), (T 'B2' 'a'), (V 'C2' 11), (T 'A3' 'south'), (T 'B3' 'b'), (V 'C3' 23),
+    (T 'A4' 'north'), (T 'B4' 'b'), (V 'C4' 35), (T 'A5' 'east'), (T 'B5' 'a'), (V 'C5' 47),
+    (T 'A6' 'south'), (T 'B6' 'a'), (V 'C6' 59), (T 'A7' 'north'), (T 'B7' 'a'), (V 'C7' 61),
+    (T 'A8' 'east'), (T 'B8' 'c'), (V 'C8' 72), (T 'A9' 'south'), (T 'B9' 'c'), (V 'C9' 84))
+# Writes the OLE DB source (one sheet, "Sales", the same eight rows) into the staging folder and
+# returns its path. Closed again before the connection reads it.
+function New-PdmSource($xl, $ctx) {
+    $path = Join-Path $ctx.stage 'source-data.xlsx'
+    if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Force }
+    $keep = $xl.SheetsInNewWorkbook; $xl.SheetsInNewWorkbook = 1
+    $src = $xl.Workbooks.Add(); $xl.SheetsInNewWorkbook = $keep
+    $ws = $src.Worksheets.Item(1); $ws.Name = 'Sales'
+    $ws.Cells.Item(1, 1).Value2 = 'Region'; $ws.Cells.Item(1, 2).Value2 = 'Category'; $ws.Cells.Item(1, 3).Value2 = 'Amount'
+    $data = @(@('north','a',11), @('south','b',23), @('north','b',35), @('east','a',47), @('south','a',59), @('north','a',61), @('east','c',72), @('south','c',84))
+    $r = 1
+    foreach ($row in $data) { $r++; $ws.Cells.Item($r, 1).Value2 = $row[0]; $ws.Cells.Item($r, 2).Value2 = $row[1]; $ws.Cells.Item($r, 3).Value2 = [double]$row[2] }
+    $src.SaveAs($path, 51); $src.Close($false)
+    return $path
+}
+function Get-PdmConnString([string]$path) {
+    return "OLEDB;Provider=Microsoft.ACE.OLEDB.12.0;Data Source=$path;Extended Properties=`"Excel 12.0 Xml;HDR=YES`""
+}
+# Adds the PivotTable on the workbook's Data Model: region on rows, sum of Amount.
+function Add-PdmModelPivot($wb, [string]$sheet, [string]$at, [string]$table) {
+    $ws = $wb.Worksheets.Item($sheet)
+    $pc = $wb.PivotCaches().Create(2, $wb.Connections.Item('ThisWorkbookDataModel'), 6)             # xlExternal
+    $pt = $pc.CreatePivotTable($ws.Range($at), 'PivotTable1', $true, 6)
+    $pt.CubeFields.Item("[$table].[Region]").Orientation = 1                                       # xlRowField
+    $m = $pt.CubeFields.GetMeasure("[$table].[Amount]", -4157, 'Sum of Amount')                    # xlSum
+    [void]$pt.AddDataField($m)
+}
+
+# A worksheet table (Sales) loaded into the Data Model; the PivotTable reads the model.
+$pdmModelGpd = @((F 'H1' '=GETPIVOTDATA("[Measures].[Sum of Amount]",Pivot!$A$3)'),
+    (F 'H2' '=GETPIVOTDATA("[Measures].[Sum of Amount]",Pivot!$A$3,"[Sales].[Region]","[Sales].[Region].&[north]")'),
+    (F 'H3' '=GETPIVOTDATA("[Measures].[Sum of Amount]",Pivot!$A$3,"[Sales].[Region]","[Sales].[Region].&[south]")'),
+    (F 'H4' '=GETPIVOTDATA("Sum of Amount",Pivot!$A$3)'),
+    (F 'H5' '=GETPIVOTDATA("[Measures].[Sum of Amount]",Pivot!$A$3,"[Sales].[Region]","north")'))
+$cases += @{ name = 'pivot-data-model/model-from-table'; sheets = @('Sheet1', 'Pivot'); cells = $pdmRows + $pdmModelGpd
+    build = {
+        param($wb, $xl, $ctx)
+        $ws = $wb.Worksheets.Item('Sheet1')
+        $lo = $ws.ListObjects.Add(1, $ws.Range('A1:C9'), $null, 1); $lo.Name = 'Sales'
+        $tmp = Join-Path $ctx.stage 'model-from-table.xlsx'
+        $wb.SaveAs($tmp, 51)                                       # the model connection needs a saved path
+        [void]$wb.Connections.Add2('WorksheetConnection_Sales', '', "WORKSHEET;$tmp", "$($wb.Name)!Sales", 7, $true, $false)
+        Add-PdmModelPivot $wb 'Pivot' 'A3' 'Sales'
+    } }
+
+# An OLE DB connection to a workbook the case writes into the staging folder; the PivotTable's
+# cache reads the connection (not the Data Model).
+$cases += @{ name = 'pivot-data-model/oledb-connection'
+    cells = @((F 'H1' '=GETPIVOTDATA("Amount",$A$3)'), (F 'H2' '=GETPIVOTDATA("Amount",$A$3,"Region","north")'),
+        (F 'H3' '=GETPIVOTDATA("Sum of Amount",$A$3,"Region","south")'))
+    build = {
+        param($wb, $xl, $ctx)
+        $path = New-PdmSource $xl $ctx
+        $wb.Activate()
+        $ws = $wb.Worksheets.Item('Sheet1')
+        $conn = $wb.Connections.Add2('SalesConnection', '', (Get-PdmConnString $path), 'Sales$', 3, $false, $false)   # xlCmdTable, not in the model
+        $pc = $wb.PivotCaches().Create(2, $conn, 6)                                                    # xlExternal
+        $pt = $pc.CreatePivotTable($ws.Range('A3'), 'PivotTable1', $true, 6)
+        $pt.PivotFields('Region').Orientation = 1                                                      # xlRowField
+        [void]$pt.AddDataField($pt.PivotFields('Amount'), 'Sum of Amount', -4157)                      # xlSum
+    } }
+
+# The same OLE DB connection loaded into the Data Model; the PivotTable reads the model.
+$cases += @{ name = 'pivot-data-model/oledb-connection-in-model'
+    cells = @((F 'H1' '=GETPIVOTDATA("[Measures].[Sum of Amount]",$A$3)'),
+        (F 'H2' '=GETPIVOTDATA("[Measures].[Sum of Amount]",$A$3,"[Sales].[Region]","[Sales].[Region].&[north]")'))
+    build = {
+        param($wb, $xl, $ctx)
+        $path = New-PdmSource $xl $ctx
+        $wb.Activate()
+        [void]$wb.Connections.Add2('SalesModelConnection', '', (Get-PdmConnString $path), 'Sales$', 3, $true, $false)   # xlCmdTable, into the model
+        Add-PdmModelPivot $wb 'Sheet1' 'A3' 'Sales'
+    } }
+
 $cases

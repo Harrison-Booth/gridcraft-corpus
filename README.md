@@ -27,7 +27,7 @@ One top-level folder per authoring application:
 
 | Folder | Source | Files |
 |---|---|---:|
-| [`excel/`](#excel-excel-oracle-workbooks) | Microsoft Excel for Microsoft 365 (16.0, build 20430, en-US), driven by [`tools/excel-oracles/`](tools/excel-oracles) | 104 |
+| [`excel/`](#excel-excel-oracle-workbooks) | Microsoft Excel for Microsoft 365 (16.0, build 20430, en-US), driven by [`tools/excel-oracles/`](tools/excel-oracles) | 107 |
 
 Also in the repository:
 
@@ -98,7 +98,7 @@ repository's history once it is published; consumers pin commits.
 
 ## `excel/`: Excel oracle workbooks
 
-104 files (98 `.xlsx`, 6 `.xls`), 1.33 MB in total. The cases are synthetic shapes of failure
+107 files (101 `.xlsx`, 6 `.xls`), 1.53 MB in total. The cases are synthetic shapes of failure
 classes found by running GridCraft over real-world workbooks; only the shapes were kept.
 Each file with a handful of formulas also has a text listing (`C1: =A1-B1`) two columns right of
 its used range, so it explains itself when opened.
@@ -117,6 +117,7 @@ its used range, so it explains itself when opened.
 | `round-trip/` | 3 | A PivotTable from an in-sheet range (row field, sum of values) with `GETPIVOTDATA`, a clustered column chart over a range, and a two-cell workbook whose author fields are blank but whose `docProps/core.xml` carries the created and modified dates | For round-trip loss; their formulas are a light calc check |
 | `pivot-external/` | 4 | PivotTables whose source is in a second workbook, `source-data.xlsx` (committed next to them): a range, a defined name in that workbook, and two PivotTables sharing one cache. The link is saved relative (`Target="source-data.xlsx"`), so it resolves inside the repository | `GETPIVOTDATA` over them gives 58, 392, 156 (and 107 for the second PivotTable) |
 | `getpivotdata/` | 12 | `GETPIVOTDATA` against an in-sheet PivotTable with two row fields: grand total, one and two field/item pairs, the data field by caption, mixed case, a cell inside the PivotTable as the reference, an item from a cell; a missing item, an inner field alone and an unknown data field; SUMIFS over the same rows as a control; ten more shapes: row and column fields, report filters, totals off, dates and numbers as items, renamed captions, hidden items, several data fields, a stale report (source edited, PivotTable not refreshed) and a tabular PivotTable on another sheet | 392, 107, 72; `#REF!` for the missing item, the inner field alone and the unknown field |
+| `pivot-data-model/` | 3 | PivotTables whose cache is a workbook connection or the Data Model, not a worksheet range: a worksheet table (`Sales`) loaded into the model; an OLE DB connection to a workbook the generator writes into its staging folder (not in the model); the same OLE DB connection loaded into the model. Each has `GETPIVOTDATA` formulas next to it | `cacheSource type="external"` with a `connectionId` and `xl/connections.xml`; the two model files also carry `xl/model/item.data`. `GETPIVOTDATA` gives 392, 107, 166 (model forms use `[Measures].[Sum of Amount]` and `[Sales].[Region].&[north]`; the plain `"Sum of Amount"` and a bare item are `#REF!` on the model) |
 
 **Locale.** Excel ran as en-US (country code 1, decimal `.`, month-day-year). Date-text parsing
 depends on it, and on Windows' two-digit-year window (1930-2029): `"Feb 29"` is February 2029 and
@@ -193,6 +194,14 @@ iteration stopped, so a near match is the expected result there.
 | `legacy-xls/shared-formula-fill-down.xls`, `.xlsx` | Two formulas filled down six rows, stored as shared formulas (SHRFMLA in `.xls`) |
 | `legacy-xls/implicit-intersection-inside-sum.xls`, `.xlsx` | `=MAX(SUM(A1:A3/12),0)` as a legacy formula: 2 in row 2, `#VALUE!` in row 5; 6 as an array formula |
 | `round-trip/core-properties-blank-author.xlsx` | Author and Last Author blank, created and modified dates present: a save must keep `docProps/core.xml` |
+
+### Files added in the third batch
+
+| File | Reproduces |
+|---|---|
+| `pivot-data-model/model-from-table.xlsx` | Worksheet table `Sales` (Region, Category, Amount; 8 rows) added to the Data Model; a PivotTable on the model (Region rows, sum of Amount) on a second sheet. Five `GETPIVOTDATA` formulas: grand total 392, `north` 107, `south` 166, and two `#REF!` forms |
+| `pivot-data-model/oledb-connection.xlsx` | OLE DB connection (ACE provider, type 5) to a generated workbook, not in the model; a PivotTable whose cache reads the connection, with records saved. `GETPIVOTDATA` gives 392, 107, 166. The source path is `C:\gc-corpus-stage\source-data.xlsx`, which does not exist after the run |
+| `pivot-data-model/oledb-connection-in-model.xlsx` | The same OLE DB connection loaded into the Data Model (type 100 connection plus `ThisWorkbookDataModel`); a PivotTable on the model. `GETPIVOTDATA` gives 392 and 107 |
 
 ## Metadata and privacy
 
